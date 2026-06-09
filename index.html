@@ -20,7 +20,7 @@ html,body{height:100%;background:#000;overflow:hidden}
 .brandlogo b{color:#fff}
 .brandlogo:after{content:"";position:absolute;bottom:-13px;left:50%;transform:translateX(-50%);border:13px solid transparent;border-top-color:#fff;border-bottom:0}
 .counter{display:none}
-#scene{flex:1;position:relative;overflow:hidden;background:#000;background-image:linear-gradient(rgba(255,255,255,.18) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.18) 1px,transparent 1px);background-size:60px 60px}
+#scene{flex:1;position:relative;overflow:hidden;background:#000;background-image:linear-gradient(rgba(255,255,255,.22) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.22) 1px,transparent 1px);background-size:60px 60px}
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #title{position:absolute;top:3.5%;left:5%;right:5%;z-index:4;pointer-events:none;border:3px solid #fff;border-radius:6px;padding:18px 26px}
 #title .tag{display:inline-block;font-family:var(--mono);font-size:20px;letter-spacing:3px;color:#000;background:#fff;padding:3px 12px;margin-bottom:10px}
@@ -53,7 +53,7 @@ html,body{height:100%;background:#000;overflow:hidden}
 .btn:disabled{opacity:.3;pointer-events:none}
 .btn.ghost{background:#000;color:#fff;border:3px solid #fff}
 /* ---- passcode gate ---- */
-#gate{position:fixed;inset:0;z-index:50;background:#000;background-image:linear-gradient(rgba(255,255,255,.18) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.18) 1px,transparent 1px);background-size:60px 60px;display:flex;align-items:center;justify-content:center}
+#gate{position:fixed;inset:0;z-index:50;background:#000;background-image:linear-gradient(rgba(255,255,255,.22) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.22) 1px,transparent 1px);background-size:60px 60px;display:flex;align-items:center;justify-content:center}
 #gate .gbox{border:3px solid #fff;border-radius:10px;padding:54px 60px;text-align:center;background:#000;max-width:80%}
 #gate .brandlogo{display:inline-block;margin-bottom:26px}
 #gate .gtag{font-family:var(--mono);text-transform:uppercase;letter-spacing:3px;color:#fff;opacity:.55;font-size:22px;margin-bottom:30px}
@@ -147,8 +147,26 @@ const spot=new THREE.SpotLight(0xffffff,3.2,40,Math.PI*0.16,0.55,0.7);
 spot.position.set(1.5,9,5.5);spot.target.position.set(0,0.4,0);
 spot.castShadow=true;spot.shadow.mapSize.set(2048,2048);spot.shadow.radius=6;spot.shadow.bias=-0.0004;
 scene.add(spot);scene.add(spot.target);
-const ground=new THREE.Mesh(new THREE.CircleGeometry(4.5,48),new THREE.ShadowMaterial({opacity:0.26}));
-ground.rotation.x=-Math.PI/2;ground.position.y=-1.5;ground.receiveShadow=true;scene.add(ground);
+/* --- fake planar reflection: a dimmed mirrored clone of the stack on a glossy floor --- */
+const FLOOR_Y=-1.0;
+const reflStack=new THREE.Group();reflStack.scale.set(1,-1,1);scene.add(reflStack);
+let reflPairs=[];
+function mkRefl(src){ const c=src.clone(true);
+  c.traverse(o=>{ if(o.isMesh){ o.castShadow=false;o.receiveShadow=false;
+    o.material=o.material.clone(); o.material.transparent=true; o.material.opacity=0.38; o.material.depthWrite=false; }});
+  return c; }
+function addRefl(src){ const dst=mkRefl(src); reflStack.add(dst); reflPairs.push({src,dst}); return dst; }
+function removeRefl(src){ const i=reflPairs.findIndex(p=>p.src===src); if(i>=0){ reflStack.remove(reflPairs[i].dst); reflPairs.splice(i,1); } }
+function syncRefl(){ reflStack.position.set(stack.position.x, 2*FLOOR_Y - stack.position.y, stack.position.z);
+  for(const p of reflPairs){ p.dst.position.copy(p.src.position); p.dst.quaternion.copy(p.src.quaternion); p.dst.scale.copy(p.src.scale); } }
+/* radial fade plate: transparent center (reflection shows) -> black rim (melts into grid) */
+const fadeCv=document.createElement('canvas');fadeCv.width=fadeCv.height=256;{const c=fadeCv.getContext('2d');const g=c.createRadialGradient(128,128,24,128,128,128);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(0.55,'rgba(0,0,0,0.18)');g.addColorStop(1,'rgba(0,0,0,1)');c.fillStyle=g;c.fillRect(0,0,256,256);}
+const fadeTex=new THREE.CanvasTexture(fadeCv);
+const floorFade=new THREE.Mesh(new THREE.CircleGeometry(3.0,64),new THREE.MeshBasicMaterial({map:fadeTex,transparent:true,depthWrite:false}));
+floorFade.rotation.x=-Math.PI/2;floorFade.position.y=FLOOR_Y+0.01;floorFade.renderOrder=3;scene.add(floorFade);
+/* contact shadow catcher */
+const ground=new THREE.Mesh(new THREE.CircleGeometry(3,48),new THREE.ShadowMaterial({opacity:0.45}));
+ground.rotation.x=-Math.PI/2;ground.position.y=FLOOR_Y+0.004;ground.receiveShadow=true;scene.add(ground);
 
 function cast(o){o.traverse(m=>{if(m.isMesh){m.castShadow=true;m.receiveShadow=true;}});return o;}
 
@@ -219,7 +237,8 @@ const stack=new THREE.Group();scene.add(stack);
 let baseTop=0, stackTop=0, layers=[], anims=[], droplets=[];
 const dropGeo=new THREE.SphereGeometry(0.5,12,10);
 function buildBase(){ stack.clear(); layers=[]; droplets.length=0;
-  const b=bottomBun(); b.position.y=-1.0; stack.add(b);
+  reflStack.clear(); reflPairs=[];
+  const b=bottomBun(); b.position.y=-1.0; stack.add(b); addRefl(b);
   baseTop=-0.5; stackTop=baseTop; }
 
 /* tween helper */
@@ -235,7 +254,7 @@ function relayout(){ let y=baseTop; for(const L of layers){ L.targetY=y; y+=L.it
 /* tap ingredient: add if absent, remove if present (toggle) */
 function addIng(it){
   if(layers.find(L=>L.it.id===it.id)) return removeIng(it);
-  const g=it.make(); stack.add(g);
+  const g=it.make(); stack.add(g); addRefl(g);
   const L={it,g,y:0,vy:0,targetY:0,landed:false,squash:0,jiggle:0,pourT:0,floatT:Math.random()*7};
   layers.push(L); relayout();
   if(it.liquid){ L.landed=true; L.y=L.targetY; g.position.y=L.y; g.scale.set(0.28,0.04,0.28); L.pourT=0.0001;
@@ -301,7 +320,7 @@ function removeIng(it){
   trayEl[it.id]&&trayEl[it.id].classList.remove('used'); refreshCount();
   const g=L.g, sy=L.y;
   tween(420,easeIn,(p)=>{ g.position.y=sy+p*4.2; g.rotation.y+=0.36;
-    g.traverse(o=>{if(o.isMesh){o.material.transparent=true;o.material.opacity=1-p;}}); },()=>stack.remove(g));
+    g.traverse(o=>{if(o.isMesh){o.material.transparent=true;o.material.opacity=1-p;}}); },()=>{stack.remove(g);removeRefl(g);});
   if(it.cap && deploy.dataset.done){ delete deploy.dataset.done; deploy.textContent='🚀 Deploy it live'; deploy.classList.add('y');
     $('#toast').classList.remove('show'); $('#trayLbl').textContent='Tap to stack · tap again to remove'; }
   if(layers.length===0) deploy.disabled=true;
@@ -406,6 +425,7 @@ function loop(){requestAnimationFrame(loop);const dt=Math.min(clock.getDelta(),0
   const dir=camera.position.clone().sub(controls.target);dir.y=Math.max(dir.y,1.2);
   const want=controls.target.clone().add(dir.normalize().multiplyScalar(camDist));
   camera.position.lerp(want,Math.min(1,dt*3));
+  syncRefl();
   controls.update();renderer.render(scene,camera);}
 fit();resize();loop();
 
