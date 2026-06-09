@@ -52,10 +52,27 @@ html,body{height:100%;background:#000;overflow:hidden}
 .btn:active{transform:scale(.95)}.btn.y{background:#fff;color:#000}
 .btn:disabled{opacity:.3;pointer-events:none}
 .btn.ghost{background:#000;color:#fff;border:3px solid #fff}
+/* ---- passcode gate ---- */
+#gate{position:fixed;inset:0;z-index:50;background:#000;background-image:linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.08) 1px,transparent 1px);background-size:54px 54px;display:flex;align-items:center;justify-content:center}
+#gate .gbox{border:3px solid #fff;border-radius:10px;padding:54px 60px;text-align:center;background:#000;max-width:80%}
+#gate .brandlogo{display:inline-block;margin-bottom:26px}
+#gate .gtag{font-family:var(--mono);text-transform:uppercase;letter-spacing:3px;color:#fff;opacity:.55;font-size:22px;margin-bottom:30px}
+#gate input{display:block;width:100%;background:#000;border:3px solid #fff;border-radius:8px;color:#fff;font-family:var(--mono);text-transform:uppercase;letter-spacing:3px;font-size:30px;text-align:center;padding:20px 24px;margin-bottom:20px;outline:none}
+#gate input::placeholder{color:#fff;opacity:.35}
+#gate button{width:100%;background:#fff;color:#000;border:none;border-radius:8px;font-size:30px;font-weight:800;padding:20px;cursor:pointer}
+#gate button:active{transform:scale(.97)}
+#gate .gerr{font-family:var(--mono);text-transform:uppercase;letter-spacing:2px;color:#ff5b52;font-size:20px;margin-top:18px;min-height:24px}
 </style>
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js"}}</script>
 </head>
 <body>
+<div id="gate"><div class="gbox">
+  <span class="brandlogo">Quick<b>Byte</b></span>
+  <div class="gtag">Item 001 · Private Preview</div>
+  <input id="gpw" type="password" placeholder="Enter passcode" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <button id="gbtn">Unlock &rarr;</button>
+  <div class="gerr" id="gerr"></div>
+</div></div>
 <div id="fit"><div id="stage">
   <div class="checkery"></div>
   <div class="topbar"><span class="brandlogo">Quick<b>Byte</b></span><div class="counter" id="counter"></div></div>
@@ -397,7 +414,15 @@ function startDemo(){const h=(location.hash||'').replace('#','');
   if(h==='demo'){let d=400;ING.forEach((it)=>{setTimeout(()=>addIng(it),d);d+=620;});}
   else if(h==='all'){ ING.forEach(it=>addIng(it)); layers.forEach(L=>{L.y=L.targetY;L.vy=0;L.landed=true;L.squash=0;L.jiggle=0;L.pourT=L.it.liquid?1:0;L.g.position.y=L.targetY;L.g.scale.set(1,1,1);}); }
 }
-preload().then(()=>{buildBase();startDemo();}).catch(e=>{console.error('model load failed',e);});
+/* ---- passcode gate: scene only boots after correct passcode ---- */
+const PW_HASH='60af57aa27933df3d4bd3fb9e65efb4b2390030c9af8d88f8e2127dbc11fb254';
+let _booted=false;
+function boot(){ if(_booted) return; _booted=true; preload().then(()=>{buildBase();startDemo();}).catch(e=>{console.error('model load failed',e);}); }
+async function _sha(s){ const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
+async function _tryUnlock(){ const v=$('#gpw').value.trim(); if(await _sha(v)===PW_HASH){ try{sessionStorage.setItem('qb_ok','1');}catch(e){} const g=$('#gate'); if(g) g.remove(); boot(); } else { $('#gerr').textContent='Wrong passcode'; $('#gpw').value=''; } }
+$('#gbtn').onclick=_tryUnlock;
+$('#gpw').addEventListener('keydown',e=>{ if(e.key==='Enter') _tryUnlock(); });
+if(sessionStorage.getItem('qb_ok')==='1'){ const g=$('#gate'); if(g) g.remove(); boot(); } else { $('#gpw').focus(); }
 </script>
 </body>
 </html>
